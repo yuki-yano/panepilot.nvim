@@ -19,6 +19,8 @@ multiline ghost text and, with either API backend, provides the same candidates
 through nvim-cmp.
 
 Manual completion shows a delayed spinner without moving the real cursor.
+At the start of any line, automatic ghost text and automatic nvim-cmp requests
+stay idle; manual trigger() and manual nvim-cmp completion remain available.
 Only the captured pane is masked. The complete editprompt draft is sent to the
 backend without masking.
 

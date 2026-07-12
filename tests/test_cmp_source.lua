@@ -100,6 +100,32 @@ T['cmp source']['formats engine candidates for nvim-cmp'] = function()
   eq(response.items[2].label, 'short')
 end
 
+T['cmp source']['forwards whether nvim-cmp was invoked manually'] = function()
+  local engine = require('panepilot.engine')
+  local original_complete = engine.complete_cmp
+  local observed = {}
+  engine.complete_cmp = function(callback, manual)
+    table.insert(observed, manual)
+    callback({})
+  end
+
+  local source = require('panepilot.cmp_source').new()
+  local function params(reason)
+    return {
+      context = {
+        get_reason = function()
+          return reason
+        end,
+      },
+    }
+  end
+  source:complete(params('auto'), function() end)
+  source:complete(params('manual'), function() end)
+  engine.complete_cmp = original_complete
+
+  eq(observed, { false, true })
+end
+
 T['cmp source']['is available only in editprompt buffers'] = function()
   local source = require('panepilot.cmp_source').new()
   local bufnr = vim.api.nvim_create_buf(false, true)
@@ -222,6 +248,57 @@ T['engine sharing']['uses the Claude API backend for nvim-cmp'] = function()
   ]])
   eq(child.lua_get('_G.claude_cmp_request.n_candidates'), 3)
   eq(child.lua_get('_G.claude_cmp_candidates'), { ' first', ' second', ' third' })
+end
+
+T['engine sharing']['requires manual nvim-cmp invocation at an empty draft'] = function()
+  child.lua([[
+    vim.env.EDITPROMPT = '1'
+    vim.bo.filetype = 'markdown.editprompt'
+    require('panepilot.config').setup({ auto_trigger = { pane_quiet_sec = 0 } })
+
+    _G.context_calls = 0
+    _G.backend_calls = 0
+    local context = require('panepilot.context')
+    context.get = function(_, callback)
+      _G.context_calls = _G.context_calls + 1
+      callback({ ok = true, pane_id = '%4', content = 'stable pane' })
+    end
+    context.observe_pane = function()
+      return true, 'hash', 0
+    end
+
+    local engine = require('panepilot.engine')
+    engine.attach(0)
+    engine._set_backend('openai', {
+      is_available = function()
+        return true
+      end,
+      complete = function(_, callback)
+        _G.backend_calls = _G.backend_calls + 1
+        callback({ ok = true, candidates = { ' first', ' second', ' third' } })
+        return {}
+      end,
+      cancel = function() end,
+    })
+  ]])
+  child.type_keys('i')
+  child.lua([[
+    require('panepilot.engine').complete_cmp(function(candidates)
+      _G.auto_cmp_candidates = candidates
+    end, false)
+  ]])
+  eq(child.lua_get('_G.auto_cmp_candidates'), {})
+  eq(child.lua_get('_G.context_calls'), 0)
+  eq(child.lua_get('_G.backend_calls'), 0)
+
+  child.lua([[
+    require('panepilot.engine').complete_cmp(function(candidates)
+      _G.manual_cmp_candidates = candidates
+    end, true)
+  ]])
+  eq(child.lua_get('_G.manual_cmp_candidates'), { ' first', ' second', ' third' })
+  eq(child.lua_get('_G.context_calls'), 1)
+  eq(child.lua_get('_G.backend_calls'), 1)
 end
 
 T['engine sharing']['serves cmp while another source has already opened the menu'] = function()

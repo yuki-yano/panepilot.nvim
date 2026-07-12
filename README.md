@@ -183,6 +183,7 @@ Use `<C-v><Tab>` to insert a literal tab.
 
 - The first pane in tmux option `@editprompt_target_panes` is used as the destination pane.
 - Automatic completion uses the OpenAI or Claude API backend after `auto_trigger.debounce_ms` and waits until the pane has been unchanged for `auto_trigger.pane_quiet_sec`.
+- At the start of any line, including an empty draft, automatic ghost completion and automatically triggered nvim-cmp requests stay idle; `trigger()` and manually invoked nvim-cmp completion remain available.
 - Automatic ghost text is suppressed while the nvim-cmp menu is visible or skkeleton is enabled.
 - New backend requests from panepilot's nvim-cmp source are suppressed while skkeleton is enabled.
 - HTTP 429 pauses new automatic ghost text and nvim-cmp backend requests until `resume_auto()` is called; manual completion remains available.

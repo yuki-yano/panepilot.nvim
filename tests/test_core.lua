@@ -434,6 +434,8 @@ T['automatic completion']['never selects the codex backend'] = function()
   child.lua([[
     vim.env.EDITPROMPT = '1'
     vim.bo.filetype = 'markdown.editprompt'
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'draft' })
+    vim.api.nvim_win_set_cursor(0, { 1, 5 })
     require('panepilot.config').setup({ backend = 'codex' })
 
     _G.codex_calls = 0
@@ -462,6 +464,8 @@ T['automatic completion']['supports the Claude API backend'] = function()
   child.lua([[
     vim.env.EDITPROMPT = '1'
     vim.bo.filetype = 'markdown.editprompt'
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'draft' })
+    vim.api.nvim_win_set_cursor(0, { 1, 5 })
     require('panepilot.config').setup({
       backend = 'claude',
       auto_trigger = { pane_quiet_sec = 0 },
@@ -494,6 +498,70 @@ T['automatic completion']['supports the Claude API backend'] = function()
   child.lua([[require('panepilot.engine').trigger(true)]])
   eq(child.lua_get('_G.claude_calls'), 1)
   eq(child.lua_get([[require('panepilot.ghost').visible()]]), true)
+  child.stop()
+end
+
+T['automatic completion']['requires a manual trigger at an empty draft or line start'] = function()
+  local child = helpers.new_child_neovim()
+  child.setup()
+  child.lua([[
+    vim.env.EDITPROMPT = '1'
+    vim.bo.filetype = 'markdown.editprompt'
+    require('panepilot.config').setup({
+      auto_trigger = { debounce_ms = 10, pane_quiet_sec = 0 },
+    })
+
+    _G.context_calls = 0
+    _G.backend_calls = 0
+    local context = require('panepilot.context')
+    context.get = function(_, callback)
+      _G.context_calls = _G.context_calls + 1
+      callback({ ok = true, pane_id = '%4', content = 'stable pane' })
+    end
+    context.observe_pane = function()
+      return true, 'hash', 0
+    end
+
+    local engine = require('panepilot.engine')
+    engine._set_backend('openai', {
+      is_available = function()
+        return true
+      end,
+      complete = function(_, callback)
+        _G.backend_calls = _G.backend_calls + 1
+        callback({ ok = true, candidates = { ' completion' } })
+        return {}
+      end,
+      cancel = function() end,
+    })
+    engine.attach(0)
+  ]])
+  child.type_keys('i')
+
+  child.lua([[require('panepilot.engine').trigger(true)]])
+  child.lua([[require('panepilot.engine').schedule_auto(0)]])
+  child.lua([[vim.wait(50)]])
+  eq(child.lua_get('_G.context_calls'), 0)
+  eq(child.lua_get('_G.backend_calls'), 0)
+
+  child.lua([[require('panepilot.engine').trigger()]])
+  eq(child.lua_get('_G.context_calls'), 1)
+  eq(child.lua_get('_G.backend_calls'), 1)
+
+  child.lua([[
+    require('panepilot.engine').dismiss()
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'first', 'second' })
+    vim.api.nvim_win_set_cursor(0, { 2, 0 })
+    _G.context_calls = 0
+    _G.backend_calls = 0
+  ]])
+  child.lua([[require('panepilot.engine').trigger(true)]])
+  eq(child.lua_get('_G.context_calls'), 0)
+  eq(child.lua_get('_G.backend_calls'), 0)
+
+  child.lua([[require('panepilot.engine').trigger()]])
+  eq(child.lua_get('_G.context_calls'), 1)
+  eq(child.lua_get('_G.backend_calls'), 1)
   child.stop()
 end
 

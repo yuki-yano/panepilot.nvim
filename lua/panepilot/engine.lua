@@ -42,6 +42,10 @@ local function is_insert_mode()
   return vim.api.nvim_get_mode().mode:sub(1, 1) == 'i'
 end
 
+local function automatic_position_allowed()
+  return vim.api.nvim_win_get_cursor(0)[2] > 0
+end
+
 local function is_target_buffer(bufnr)
   return vim.env.EDITPROMPT == '1'
     and vim.api.nvim_buf_is_valid(bufnr)
@@ -241,7 +245,15 @@ function M.trigger(automatic, scheduled_generation)
   end
 
   local opts = config.get()
-  if automatic and (not opts.auto_trigger.enabled or not api_backends[opts.backend] or auto_suppressed()) then
+  if
+    automatic
+    and (
+      not opts.auto_trigger.enabled
+      or not api_backends[opts.backend]
+      or auto_suppressed()
+      or not automatic_position_allowed()
+    )
+  then
     return
   end
 
@@ -300,7 +312,7 @@ function M.trigger(automatic, scheduled_generation)
       return
     end
     if automatic then
-      if auto_suppressed() then
+      if auto_suppressed() or not automatic_position_allowed() then
         return
       end
       local quiet, _, retry_after_ms =
@@ -391,7 +403,12 @@ function M.schedule_auto(bufnr)
   cancel_in_flight(bufnr, state)
   ghost.dismiss(bufnr)
   state.generation = state.generation + 1
-  if not opts.auto_trigger.enabled or not api_backends[opts.backend] or auto_suppressed() then
+  if
+    not opts.auto_trigger.enabled
+    or not api_backends[opts.backend]
+    or auto_suppressed()
+    or not automatic_position_allowed()
+  then
     return
   end
   start_auto_timer(bufnr, state, state.generation, opts.auto_trigger.debounce_ms)
@@ -402,10 +419,14 @@ function M.cache_key(pane_content, buffer_before, buffer_after, opts)
   return context.hash(pane_content) .. '\0' .. draft_hash .. '\0' .. cache_signature(opts)
 end
 
-function M.complete_cmp(callback)
+function M.complete_cmp(callback, manual)
   local bufnr = vim.api.nvim_get_current_buf()
   local opts = config.get()
   if not M.attach(bufnr) or not is_insert_mode() or not opts.cmp.enabled or not api_backends[opts.backend] then
+    callback({})
+    return
+  end
+  if not manual and not automatic_position_allowed() then
     callback({})
     return
   end

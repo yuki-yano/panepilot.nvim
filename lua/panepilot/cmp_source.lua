@@ -30,7 +30,10 @@ function Source:get_keyword_pattern()
   return [[\%$]]
 end
 
-function Source:complete(_, callback)
+function Source:complete(params, callback)
+  local manual = params.context
+    and type(params.context.get_reason) == 'function'
+    and params.context:get_reason() == 'manual'
   require('panepilot.engine').complete_cmp(function(candidates)
     local items = {}
     for _, candidate in ipairs(candidates) do
@@ -42,7 +45,7 @@ function Source:complete(_, callback)
       })
     end
     callback({ items = items, isIncomplete = false })
-  end)
+  end, manual)
 end
 
 function M.register()

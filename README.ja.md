@@ -184,6 +184,7 @@ vim.api.nvim_create_autocmd('FileType', {
 
 - tmux option `@editprompt_target_panes` の先頭に登録されたペインを送信先として使います。
 - 自動補完はOpenAIまたはClaudeのAPIバックエンドで動作し、`auto_trigger.debounce_ms` の経過後、ペインの内容が `auto_trigger.pane_quiet_sec` の間変化していないことを確認して実行します。
+- 空のdraftを含む各行の行頭では、自動ghost textとnvim-cmpからの自動リクエストを開始せず、`trigger()` またはnvim-cmpの手動補完を実行した場合だけ候補を取得します。
 - nvim-cmpのメニュー表示中またはskkeletonの有効中は、自動ghost textを抑制します。
 - skkeletonの有効中は、panepilotのnvim-cmpソースから新しいバックエンドリクエストを開始しません。
 - HTTP 429を受けると、新しい自動ghost textとnvim-cmpのバックエンドリクエストを停止し、`resume_auto()` が呼ばれるまで再開しません。手動補完は停止しません。
