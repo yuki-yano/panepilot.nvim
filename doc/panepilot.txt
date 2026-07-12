@@ -1,0 +1,137 @@
+*panepilot.txt*                 Context-aware prompt completion for editprompt
+
+===============================================================================
+CONTENTS                                                     *panepilot-contents*
+
+1. Introduction ............................................. |panepilot-intro|
+2. Setup ..................................................... |panepilot-setup|
+3. Commands ............................................... |panepilot-commands|
+4. Lua API ................................................... |panepilot-api|
+5. Configuration ......................................... |panepilot-options|
+6. Privacy ................................................. |panepilot-privacy|
+
+===============================================================================
+INTRODUCTION                                                   *panepilot-intro*
+
+panepilot.nvim captures the destination tmux pane selected by editprompt and
+uses it as context for OpenAI, Claude, or Codex prompt completion. It renders
+multiline ghost text and, with either API backend, provides the same candidates
+through nvim-cmp.
+
+Manual completion shows a delayed spinner without moving the real cursor.
+Only the captured pane is masked. The complete editprompt draft is sent to the
+backend without masking.
+
+The plugin is active only when EDITPROMPT=1 and 'filetype' is
+markdown.editprompt. It does not install keymaps.
+
+Requirements: Neovim 0.11+, tmux, curl 8.3+ and PANEPILOT_API_KEY for
+OpenAI, curl 8.3+ and PANEPILOT_API_KEY for Claude, or the codex executable
+for Codex.
+
+===============================================================================
+SETUP                                                           *panepilot-setup*
+
+>lua
+  require('panepilot').setup()
+<
+
+With the OpenAI or Claude backend, add { name = 'panepilot' } to nvim-cmp
+sources when using the cmp frontend.
+See README.md or README.ja.md for complete keymap and lazy.nvim examples.
+
+===============================================================================
+COMMANDS                                                     *panepilot-commands*
+
+:PanepilotDebugContext
+    Open the masked tmux context that would be sent to the backend.
+
+:PanepilotLog
+    Open the in-memory diagnostic ring. No log file is written.
+
+:checkhealth panepilot
+    Check Neovim, tmux, target pane, curl, API key, and backend availability.
+
+===============================================================================
+LUA API                                                          *panepilot-api*
+
+require('panepilot').trigger()
+    Trigger completion manually.
+
+require('panepilot').visible()
+    Return whether ghost text is visible at the cursor.
+
+require('panepilot').accept()
+    Accept the selected candidate.
+
+require('panepilot').accept_word()
+    Accept one charclass-based unit. Leading whitespace is included.
+
+require('panepilot').accept_line()
+    Accept one line. A following invocation accepts newline plus the next line.
+
+require('panepilot').dismiss()
+    Cancel the current completion and remove ghost text or the spinner.
+
+require('panepilot').next_candidate()
+require('panepilot').prev_candidate()
+    Cycle candidates. These are no-ops after partial acceptance.
+
+require('panepilot').resume_auto()
+    Resume automatic ghost text and nvim-cmp after an HTTP 429 pause.
+
+===============================================================================
+CONFIGURATION                                                 *panepilot-options*
+
+>lua
+  require('panepilot').setup({
+    backend = 'openai',
+    openai = {
+      model = 'gpt-5.6-luna',
+      reasoning_effort = 'none',
+      max_output_tokens = 400,
+      api_key_env = 'PANEPILOT_API_KEY',
+      timeout_ms = 10000,
+    },
+    claude = {
+      model = 'claude-haiku-4-5',
+      max_tokens = 400,
+      api_key_env = 'PANEPILOT_API_KEY',
+      timeout_ms = 10000,
+    },
+    codex = {
+      model = 'gpt-5.3-codex-spark',
+      reasoning_effort = 'low',
+      timeout_ms = 30000,
+    },
+    context = { lines = 300, mask_patterns = {} },
+    auto_trigger = { enabled = true, debounce_ms = 800, pane_quiet_sec = 3 },
+    n_candidates = 3,
+    max_candidate_lines = 2,
+    max_candidate_chars = 80,
+    cmp = { enabled = true },
+  })
+<
+
+The OpenAI backend never falls back to OPENAI_API_KEY.
+The Claude backend reads only claude.api_key_env and has no API key fallback.
+PANEPILOT_API_KEY must contain a key issued by the selected API backend.
+Candidate limits apply to every backend. n_candidates accepts integers from 1
+through 3; both candidate length limits accept positive integers. Claude uses
+Haiku 4.5 by default. OpenAI and Claude support automatic completion and
+nvim-cmp; Codex supports manual completion only.
+
+===============================================================================
+PRIVACY                                                     *panepilot-privacy*
+
+Only captured tmux context is masked. The complete editprompt draft is sent
+without masking. Built-in rules mask long sk-... tokens and values assigned to
+keys ending in key, token, secret, password, passwd, or credential.
+
+context.mask_patterns accepts Lua pattern rules such as
+{ pattern = 'private%-%d+', replace = '<masked-id>' } and transformation
+functions that receive and return the full context string. Custom rules run
+after built-in masking. Masking is best-effort; use :PanepilotDebugContext to
+inspect the exact pane context before using the plugin with sensitive data.
+
+vim:tw=78:ts=8:noet:ft=help:norl:
