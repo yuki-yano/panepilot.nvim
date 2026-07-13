@@ -30,6 +30,31 @@ T['config']['uses Phase 1 defaults'] = function()
   eq(config.get().n_candidates, 3)
   eq(config.get().max_candidate_lines, 2)
   eq(config.get().max_candidate_chars, 80)
+  eq(config.get().system_prompt, nil)
+  eq(config.get().cmp.dismiss_ghost_on_menu_open, true)
+end
+
+T['config']['accepts string and function system prompts'] = function()
+  local config = require('panepilot.config')
+  eq(config.setup({ system_prompt = 'custom prompt' }), true)
+  eq(config.get().system_prompt, 'custom prompt')
+
+  local custom = function(ctx)
+    return ctx.default_prompt
+  end
+  eq(config.setup({ system_prompt = custom }), true)
+  eq(config.get().system_prompt, custom)
+end
+
+T['config']['rejects invalid system prompts'] = function()
+  local config = require('panepilot.config')
+  local original_notify = vim.notify
+  vim.notify = function() end
+
+  eq(config.setup({ system_prompt = '' }), false)
+  eq(config.setup({ system_prompt = {} }), false)
+  helpers.expect.match(config.error(), 'system_prompt must be a non%-empty string, function, or nil')
+  vim.notify = original_notify
 end
 
 T['config']['accepts custom candidate length limits'] = function()
@@ -47,6 +72,22 @@ T['config']['rejects invalid candidate length limits'] = function()
   eq(config.setup({ max_candidate_lines = 0 }), false)
   eq(config.setup({ max_candidate_lines = 1.5 }), false)
   eq(config.setup({ max_candidate_chars = '80' }), false)
+  vim.notify = original_notify
+end
+
+T['config']['accepts ghost text alongside the nvim-cmp menu'] = function()
+  local config = require('panepilot.config')
+  eq(config.setup({ cmp = { dismiss_ghost_on_menu_open = false } }), true)
+  eq(config.get().cmp.dismiss_ghost_on_menu_open, false)
+end
+
+T['config']['rejects an invalid cmp ghost text option'] = function()
+  local config = require('panepilot.config')
+  local original_notify = vim.notify
+  vim.notify = function() end
+
+  eq(config.setup({ cmp = { dismiss_ghost_on_menu_open = 'false' } }), false)
+  helpers.expect.match(config.error(), 'cmp.dismiss_ghost_on_menu_open must be a boolean')
   vim.notify = original_notify
 end
 
@@ -105,6 +146,149 @@ T['config']['rejects malformed masking patterns during setup'] = function()
 end
 
 T['candidate limits'] = new_set()
+
+T['system prompt'] = new_set()
+
+T['system prompt']['uses the default, a string replacement, or a function replacement'] = function()
+  local config = require('panepilot.config')
+  local engine = require('panepilot.engine')
+  local openai = require('panepilot.backend.openai')
+  local opts = config.get()
+
+  eq(engine._resolve_system_prompt(opts, 3), openai.system_prompt(3, 2, 80))
+
+  opts = vim.deepcopy(opts)
+  opts.system_prompt = 'custom prompt'
+  eq(engine._resolve_system_prompt(opts, 3), 'custom prompt')
+
+  local observed
+  opts.backend = 'claude'
+  opts.system_prompt = function(ctx)
+    observed = ctx
+    return ctx.default_prompt .. '\ncustom instruction'
+  end
+  local resolved = engine._resolve_system_prompt(opts, 2)
+  eq(resolved, openai.system_prompt(2, 2, 80) .. '\ncustom instruction')
+  eq(observed.backend, 'claude')
+  eq(observed.n_candidates, 2)
+  eq(observed.max_candidate_lines, 2)
+  eq(observed.max_candidate_chars, 80)
+  eq(observed.default_prompt, openai.system_prompt(2, 2, 80))
+
+  opts.backend = 'codex'
+  opts.system_prompt = function(ctx)
+    observed = ctx
+    return 'codex prompt'
+  end
+  eq(engine._resolve_system_prompt(opts, 1), 'codex prompt')
+  eq(observed.n_candidates, 1)
+end
+
+T['system prompt']['reports function failures and invalid return values'] = function()
+  local config = require('panepilot.config')
+  local engine = require('panepilot.engine')
+  local opts = vim.deepcopy(config.get())
+
+  opts.system_prompt = function()
+    error('prompt failed')
+  end
+  local prompt, err = engine._resolve_system_prompt(opts, 3)
+  eq(prompt, nil)
+  helpers.expect.match(err, 'system_prompt function failed')
+  helpers.expect.match(err, 'prompt failed')
+
+  opts.system_prompt = function()
+    return ''
+  end
+  prompt, err = engine._resolve_system_prompt(opts, 3)
+  eq(prompt, nil)
+  helpers.expect.match(err, 'must return a non%-empty string')
+
+  opts.system_prompt = function()
+    return 42
+  end
+  prompt, err = engine._resolve_system_prompt(opts, 3)
+  eq(prompt, nil)
+  helpers.expect.match(err, 'must return a non%-empty string')
+end
+
+T['system prompt']['passes a function replacement to a manual backend request'] = function()
+  local child = helpers.new_child_neovim()
+  child.setup()
+  child.lua([[
+    vim.env.EDITPROMPT = '1'
+    vim.bo.filetype = 'markdown.editprompt'
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'draft' })
+    vim.api.nvim_win_set_cursor(0, { 1, 5 })
+    require('panepilot.config').setup({
+      system_prompt = function(ctx)
+        return ('custom %s prompt for %d candidates'):format(ctx.backend, ctx.n_candidates)
+      end,
+    })
+
+    local context = require('panepilot.context')
+    context.get = function(_, callback)
+      callback({ ok = true, pane_id = '%4', content = 'stable pane' })
+    end
+
+    local engine = require('panepilot.engine')
+    engine._set_backend('openai', {
+      is_available = function()
+        return true
+      end,
+      complete = function(request, callback)
+        _G.custom_prompt_request = request
+        callback({ ok = true, candidates = { ' first', ' second', ' third' } })
+        return {}
+      end,
+      cancel = function() end,
+    })
+  ]])
+  child.type_keys('i')
+  child.lua([[require('panepilot.engine').trigger()]])
+  eq(child.lua_get('_G.custom_prompt_request.system'), 'custom openai prompt for 3 candidates')
+  child.stop()
+end
+
+T['system prompt']['stops manual completion when the prompt function fails'] = function()
+  local child = helpers.new_child_neovim()
+  child.setup()
+  child.lua([[
+    vim.env.EDITPROMPT = '1'
+    vim.bo.filetype = 'markdown.editprompt'
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'draft' })
+    vim.api.nvim_win_set_cursor(0, { 1, 5 })
+    require('panepilot.config').setup({
+      system_prompt = function()
+        error('manual prompt failed')
+      end,
+    })
+
+    local context = require('panepilot.context')
+    context.get = function(_, callback)
+      callback({ ok = true, pane_id = '%4', content = 'stable pane' })
+    end
+
+    _G.backend_calls = 0
+    local engine = require('panepilot.engine')
+    engine._set_backend('openai', {
+      is_available = function()
+        return true
+      end,
+      complete = function()
+        _G.backend_calls = _G.backend_calls + 1
+      end,
+      cancel = function() end,
+    })
+  ]])
+  child.type_keys('i')
+  child.lua([[require('panepilot.engine').trigger()]])
+  child.lua([[vim.wait(250)]])
+  eq(child.lua_get('_G.backend_calls'), 0)
+  eq(child.lua_get([[require('panepilot.spinner').visible()]]), false)
+  helpers.expect.match(child.lua_get([[require('panepilot.log').entries()[1].message]]), 'manual prompt failed')
+  child.stop()
+end
 
 T['candidate limits']['caps lines and visible Unicode characters without changing shorter candidates'] = function()
   local engine = require('panepilot.engine')

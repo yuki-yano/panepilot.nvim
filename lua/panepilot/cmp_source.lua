@@ -1,6 +1,7 @@
 local M = {}
 
 local registered = false
+local unsubscribe_menu_opened
 
 local Source = {}
 Source.__index = Source
@@ -60,8 +61,10 @@ function M.register()
   end
 
   cmp.register_source('panepilot', Source.new())
-  cmp.event:on('menu_opened', function()
-    require('panepilot.ghost').dismiss()
+  unsubscribe_menu_opened = cmp.event:on('menu_opened', function()
+    if require('panepilot.config').get().cmp.dismiss_ghost_on_menu_open then
+      require('panepilot.ghost').dismiss()
+    end
   end)
   registered = true
   return true
@@ -72,6 +75,10 @@ function M.new()
 end
 
 function M._reset()
+  if unsubscribe_menu_opened then
+    unsubscribe_menu_opened()
+    unsubscribe_menu_opened = nil
+  end
   registered = false
 end
 

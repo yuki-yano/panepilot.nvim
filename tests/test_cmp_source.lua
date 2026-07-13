@@ -18,39 +18,41 @@ T['engine cache']['keys by pane content and the complete draft around the cursor
   local config = require('panepilot.config')
   local engine = require('panepilot.engine')
   local opts = config.get()
-  local key = engine.cache_key('pane', 'before', 'after', opts)
-  eq(engine.cache_key('pane', 'before', 'after', opts), key)
-  eq(engine.cache_key('other pane', 'before', 'after', opts) == key, false)
-  eq(engine.cache_key('pane', 'other before', 'after', opts) == key, false)
-  eq(engine.cache_key('pane', 'before', 'other after', opts) == key, false)
+  local key = engine.cache_key('pane', 'before', 'after', opts, 'prompt')
+  eq(engine.cache_key('pane', 'before', 'after', opts, 'prompt'), key)
+  eq(engine.cache_key('other pane', 'before', 'after', opts, 'prompt') == key, false)
+  eq(engine.cache_key('pane', 'other before', 'after', opts, 'prompt') == key, false)
+  eq(engine.cache_key('pane', 'before', 'other after', opts, 'prompt') == key, false)
+  eq(engine.cache_key('pane', 'before', 'after', opts, 'other prompt') == key, false)
+  eq(pcall(engine.cache_key, 'pane', 'before', 'after', opts, nil), false)
 end
 
 T['engine cache']['separates generation settings'] = function()
   local config = require('panepilot.config')
   local engine = require('panepilot.engine')
   local defaults = config.get()
-  local default_key = engine.cache_key('pane', 'draft', '', defaults)
+  local default_key = engine.cache_key('pane', 'draft', '', defaults, 'prompt')
 
   local longer = vim.deepcopy(defaults)
   longer.max_candidate_chars = 160
-  eq(engine.cache_key('pane', 'draft', '', longer) == default_key, false)
+  eq(engine.cache_key('pane', 'draft', '', longer, 'prompt') == default_key, false)
 
   local other_model = vim.deepcopy(defaults)
   other_model.openai.model = 'other-model'
-  eq(engine.cache_key('pane', 'draft', '', other_model) == default_key, false)
+  eq(engine.cache_key('pane', 'draft', '', other_model, 'prompt') == default_key, false)
 
   local codex = vim.deepcopy(defaults)
   codex.backend = 'codex'
-  eq(engine.cache_key('pane', 'draft', '', codex) == default_key, false)
+  eq(engine.cache_key('pane', 'draft', '', codex, 'prompt') == default_key, false)
 
   local claude = vim.deepcopy(defaults)
   claude.backend = 'claude'
-  local claude_key = engine.cache_key('pane', 'draft', '', claude)
+  local claude_key = engine.cache_key('pane', 'draft', '', claude, 'prompt')
   eq(claude_key == default_key, false)
 
   local other_claude = vim.deepcopy(claude)
   other_claude.claude.max_tokens = 800
-  eq(engine.cache_key('pane', 'draft', '', other_claude) == claude_key, false)
+  eq(engine.cache_key('pane', 'draft', '', other_claude, 'prompt') == claude_key, false)
 end
 
 T['engine cache']['returns copies of cached candidates'] = function()
@@ -148,14 +150,50 @@ T['cmp source']['dismisses ghost text when the menu opens'] = function()
   local ghost = require('panepilot.ghost')
   local bufnr = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_set_current_buf(bufnr)
-  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { 'draft' })
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { 'draft|' })
   vim.api.nvim_win_set_cursor(0, { 1, 5 })
   ghost.show(bufnr, 0, 5, { ' candidate' })
+  eq(ghost.visible(bufnr), true)
 
   cmp_source._reset()
   eq(cmp_source.register(), true)
   require('cmp').event:emit('menu_opened')
   eq(ghost.visible(bufnr), false)
+end
+
+T['cmp source']['keeps ghost text when configured alongside the menu'] = function()
+  local cmp_source = require('panepilot.cmp_source')
+  local ghost = require('panepilot.ghost')
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_set_current_buf(bufnr)
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { 'draft|' })
+  vim.api.nvim_win_set_cursor(0, { 1, 5 })
+  require('panepilot.config').setup({ cmp = { dismiss_ghost_on_menu_open = false } })
+  ghost.show(bufnr, 0, 5, { ' candidate' })
+  eq(ghost.visible(bufnr), true)
+
+  cmp_source._reset()
+  eq(cmp_source.register(), true)
+  require('cmp').event:emit('menu_opened')
+  eq(ghost.visible(bufnr), true)
+end
+
+T['cmp source']['removes its menu listener when reset'] = function()
+  local cmp_source = require('panepilot.cmp_source')
+  local ghost = require('panepilot.ghost')
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_set_current_buf(bufnr)
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { 'draft|' })
+  vim.api.nvim_win_set_cursor(0, { 1, 5 })
+
+  cmp_source._reset()
+  eq(cmp_source.register(), true)
+  cmp_source._reset()
+  require('panepilot.config').setup({ cmp = { dismiss_ghost_on_menu_open = false } })
+  ghost.show(bufnr, 0, 5, { ' candidate' })
+  require('cmp').event:emit('menu_opened')
+
+  eq(ghost.visible(bufnr), true)
 end
 
 local child = helpers.new_child_neovim()
@@ -216,6 +254,7 @@ T['engine sharing']['uses the Claude API backend for nvim-cmp'] = function()
     require('panepilot.config').setup({
       backend = 'claude',
       auto_trigger = { pane_quiet_sec = 0 },
+      system_prompt = 'custom cmp prompt',
     })
 
     local context = require('panepilot.context')
@@ -247,7 +286,103 @@ T['engine sharing']['uses the Claude API backend for nvim-cmp'] = function()
     end)
   ]])
   eq(child.lua_get('_G.claude_cmp_request.n_candidates'), 3)
+  eq(child.lua_get('_G.claude_cmp_request.system'), 'custom cmp prompt')
   eq(child.lua_get('_G.claude_cmp_candidates'), { ' first', ' second', ' third' })
+end
+
+T['engine sharing']['resolves a function system prompt once across cmp quiet retries'] = function()
+  child.lua([[
+    vim.env.EDITPROMPT = '1'
+    vim.bo.filetype = 'markdown.editprompt'
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'draft' })
+    vim.api.nvim_win_set_cursor(0, { 1, 5 })
+    _G.prompt_calls = 0
+    _G.observe_calls = 0
+    require('panepilot.config').setup({
+      auto_trigger = { pane_quiet_sec = 0 },
+      system_prompt = function(ctx)
+        _G.prompt_calls = _G.prompt_calls + 1
+        return ctx.default_prompt
+      end,
+    })
+
+    local context = require('panepilot.context')
+    context.get = function(_, callback)
+      callback({ ok = true, pane_id = '%4', content = 'stable pane' })
+    end
+    context.observe_pane = function()
+      _G.observe_calls = _G.observe_calls + 1
+      return _G.observe_calls > 1, 'hash', 0
+    end
+
+    local engine = require('panepilot.engine')
+    engine.attach(0)
+    engine._set_backend('openai', {
+      is_available = function()
+        return true
+      end,
+      complete = function(_, callback)
+        callback({ ok = true, candidates = { ' first', ' second', ' third' } })
+        return {}
+      end,
+      cancel = function() end,
+    })
+  ]])
+  child.type_keys('i')
+  child.lua([[
+    require('panepilot.engine').complete_cmp(function(candidates)
+      _G.retry_candidates = candidates
+    end, true)
+    vim.wait(1000, function()
+      return _G.retry_candidates ~= nil
+    end)
+  ]])
+  eq(child.lua_get('_G.prompt_calls'), 1)
+  eq(child.lua_get('_G.observe_calls'), 2)
+  eq(child.lua_get('_G.retry_candidates'), { ' first', ' second', ' third' })
+end
+
+T['engine sharing']['ends cmp completion without a backend request when the prompt function fails'] = function()
+  child.lua([[
+    vim.env.EDITPROMPT = '1'
+    vim.bo.filetype = 'markdown.editprompt'
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'draft' })
+    vim.api.nvim_win_set_cursor(0, { 1, 5 })
+    require('panepilot.config').setup({
+      system_prompt = function()
+        error('cmp prompt failed')
+      end,
+    })
+
+    _G.context_calls = 0
+    _G.backend_calls = 0
+    local context = require('panepilot.context')
+    context.get = function()
+      _G.context_calls = _G.context_calls + 1
+    end
+
+    local engine = require('panepilot.engine')
+    engine.attach(0)
+    engine._set_backend('openai', {
+      is_available = function()
+        return true
+      end,
+      complete = function()
+        _G.backend_calls = _G.backend_calls + 1
+      end,
+      cancel = function() end,
+    })
+  ]])
+  child.type_keys('i')
+  child.lua([[
+    require('panepilot.engine').complete_cmp(function(candidates)
+      _G.failed_prompt_candidates = candidates
+    end, true)
+  ]])
+  eq(child.lua_get('_G.failed_prompt_candidates'), {})
+  eq(child.lua_get('_G.context_calls'), 0)
+  eq(child.lua_get('_G.backend_calls'), 0)
+  helpers.expect.match(child.lua_get([[require('panepilot.log').entries()[1].message]]), 'cmp prompt failed')
 end
 
 T['engine sharing']['requires manual nvim-cmp invocation at an empty draft'] = function()
@@ -299,6 +434,90 @@ T['engine sharing']['requires manual nvim-cmp invocation at an empty draft'] = f
   eq(child.lua_get('_G.manual_cmp_candidates'), { ' first', ' second', ' third' })
   eq(child.lua_get('_G.context_calls'), 1)
   eq(child.lua_get('_G.backend_calls'), 1)
+end
+
+T['engine sharing']['keeps ghost text during a new cmp request when configured'] = function()
+  child.lua([[
+    vim.env.EDITPROMPT = '1'
+    vim.bo.filetype = 'markdown.editprompt'
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'draft' })
+    require('panepilot.config').setup({
+      auto_trigger = { pane_quiet_sec = 0 },
+      cmp = { dismiss_ghost_on_menu_open = false },
+    })
+
+    local context = require('panepilot.context')
+    context.get = function(_, callback)
+      callback({ ok = true, pane_id = '%4', content = 'stable pane' })
+    end
+    context.observe_pane = function()
+      return true, 'hash', 0
+    end
+
+    local engine = require('panepilot.engine')
+    engine.attach(0)
+    engine._set_backend('openai', {
+      is_available = function()
+        return true
+      end,
+      complete = function(_, callback)
+        callback({ ok = true, candidates = { ' first', ' second', ' third' } })
+        return {}
+      end,
+      cancel = function() end,
+    })
+  ]])
+  child.type_keys('A')
+  child.lua([[
+    local bufnr = vim.api.nvim_get_current_buf()
+    require('panepilot.ghost').show(bufnr, 0, 5, { ' existing ghost' })
+    assert(require('panepilot.ghost').visible(bufnr))
+    require('panepilot.engine').complete_cmp(function(candidates)
+      _G.cmp_candidates = candidates
+    end, true)
+  ]])
+  eq(child.lua_get('_G.cmp_candidates'), { ' first', ' second', ' third' })
+  eq(child.lua_get([[require('panepilot.ghost').visible()]]), true)
+end
+
+T['engine sharing']['dismisses ghost text during a new cmp request by default'] = function()
+  child.lua([[
+    vim.env.EDITPROMPT = '1'
+    vim.bo.filetype = 'markdown.editprompt'
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'draft' })
+    require('panepilot.config').setup({ auto_trigger = { pane_quiet_sec = 0 } })
+
+    local context = require('panepilot.context')
+    context.get = function(_, callback)
+      callback({ ok = true, pane_id = '%4', content = 'stable pane' })
+    end
+    context.observe_pane = function()
+      return true, 'hash', 0
+    end
+
+    local engine = require('panepilot.engine')
+    engine.attach(0)
+    engine._set_backend('openai', {
+      is_available = function()
+        return true
+      end,
+      complete = function(_, callback)
+        callback({ ok = true, candidates = { ' first', ' second', 'third' } })
+        return {}
+      end,
+      cancel = function() end,
+    })
+  ]])
+  child.type_keys('A')
+  child.lua([[
+    local bufnr = vim.api.nvim_get_current_buf()
+    require('panepilot.ghost').show(bufnr, 0, 5, { ' existing ghost' })
+    assert(require('panepilot.ghost').visible(bufnr))
+    require('panepilot.engine').complete_cmp(function(candidates)
+      _G.cmp_candidates = candidates
+    end, true)
+  ]])
+  eq(child.lua_get([[require('panepilot.ghost').visible()]]), false)
 end
 
 T['engine sharing']['serves cmp while another source has already opened the menu'] = function()

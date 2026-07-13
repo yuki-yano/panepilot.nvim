@@ -41,8 +41,7 @@ function M.build_payload(request, opts)
     reasoning = { effort = opts.reasoning_effort },
     max_output_tokens = opts.max_output_tokens,
     prompt_cache_key = 'panepilot:' .. request.pane_id,
-    instructions = request.system
-      or system_prompt(n_candidates, request.max_candidate_lines, request.max_candidate_chars),
+    instructions = request.system,
     input = input_text(request),
     text = {
       format = {

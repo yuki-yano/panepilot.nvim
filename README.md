@@ -71,13 +71,33 @@ require('panepilot').setup({
   n_candidates = 3,
   max_candidate_lines = 2,
   max_candidate_chars = 80,
-  cmp = { enabled = true },
+  system_prompt = nil,
+  cmp = {
+    enabled = true,
+    dismiss_ghost_on_menu_open = true,
+  },
 })
 ```
 
 `n_candidates` must be an integer from 1 to 3.
 `max_candidate_lines` and `max_candidate_chars` apply to every backend and may be set to any positive integer.
 The prompt asks the model to finish naturally within both limits; overlong responses are truncated before display or nvim-cmp delivery.
+
+`system_prompt` uses the built-in prompt when omitted.
+A non-empty string replaces it directly, while a function receives the resolved generation settings and may return a dynamic replacement:
+
+```lua
+require('panepilot').setup({
+  system_prompt = function(ctx)
+    return ctx.default_prompt .. '\nPrefer a concise answer that continues the current sentence.'
+  end,
+})
+```
+
+The function receives `backend`, `n_candidates`, `max_candidate_lines`, `max_candidate_chars`, and `default_prompt`.
+It runs synchronously once per completion request, and `n_candidates` is `1` for the Codex backend.
+It must return a non-empty string; an error or invalid return value cancels that completion and is recorded by `:PanepilotLog`.
+The resolved prompt applies to OpenAI, Claude, and Codex and is included in the completion cache identity.
 
 `context.mask_patterns` accepts Lua pattern rules and transformation functions.
 They run after the built-in masking rules:
@@ -96,6 +116,9 @@ require('panepilot').setup({
 ```
 
 `PanepilotGhost` links to `Comment` by default, and `PanepilotSpinner` links to `Special`.
+
+`cmp.dismiss_ghost_on_menu_open` keeps the two completion UIs mutually exclusive by default.
+Set it to `false` to retain Panepilot ghost text while the nvim-cmp menu is visible or requests new candidates; the keymap example below accepts ghost text before the selected nvim-cmp item.
 
 ## Backends
 
@@ -190,7 +213,7 @@ Use `<C-v><Tab>` to insert a literal tab.
 - Manual completion shows a one-cell spinner one cell to the right of the cursor after 200 ms. Automatic and nvim-cmp requests do not show it.
 - Ghost text and the spinner are virtual decorations that do not change buffer text or move the real cursor; the first ghost line and spinner use overlays.
 - Moving the cursor, changing text, leaving insert mode, leaving the buffer, or calling `dismiss()` cancels the current request and removes its UI.
-- Opening the nvim-cmp menu removes ghost text to avoid overlapping completion UIs.
+- Opening the nvim-cmp menu removes ghost text by default to avoid overlapping completion UIs; set `cmp.dismiss_ghost_on_menu_open = false` to retain it.
 
 ## Privacy
 

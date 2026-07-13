@@ -38,6 +38,44 @@ local function limit_candidates(candidates, max_lines, max_chars)
   return limited
 end
 
+local function resolve_system_prompt(opts, n_candidates)
+  local default_prompt = openai.system_prompt(n_candidates, opts.max_candidate_lines, opts.max_candidate_chars)
+  if opts.system_prompt == nil then
+    return default_prompt
+  end
+  if type(opts.system_prompt) == 'string' then
+    return opts.system_prompt
+  end
+
+  local ok, custom_prompt = pcall(opts.system_prompt, {
+    backend = opts.backend,
+    n_candidates = n_candidates,
+    max_candidate_lines = opts.max_candidate_lines,
+    max_candidate_chars = opts.max_candidate_chars,
+    default_prompt = default_prompt,
+  })
+  if not ok then
+    return nil, 'system_prompt function failed: ' .. tostring(custom_prompt)
+  end
+  if type(custom_prompt) ~= 'string' or custom_prompt == '' then
+    return nil, 'system_prompt function must return a non-empty string'
+  end
+  return custom_prompt
+end
+
+local function build_request(opts, n_candidates, system_prompt, context_result, buffer_before, buffer_after)
+  return {
+    system = system_prompt,
+    context = context_result.content,
+    buffer_before = buffer_before,
+    buffer_after = buffer_after,
+    pane_id = context_result.pane_id,
+    n_candidates = n_candidates,
+    max_candidate_lines = opts.max_candidate_lines,
+    max_candidate_chars = opts.max_candidate_chars,
+  }
+end
+
 local function is_insert_mode()
   return vim.api.nvim_get_mode().mode:sub(1, 1) == 'i'
 end
@@ -325,7 +363,14 @@ function M.trigger(automatic, scheduled_generation)
 
     local cursor = vim.api.nvim_win_get_cursor(0)
     local buffer_before, buffer_after = buffer_around_cursor(bufnr, cursor)
-    local cache_key = M.cache_key(context_result.content, buffer_before, buffer_after, opts)
+    local request_candidates = opts.backend == 'codex' and 1 or opts.n_candidates
+    local system_prompt, prompt_error = resolve_system_prompt(opts, request_candidates)
+    if not system_prompt then
+      stop_spinner()
+      log.add('error', prompt_error)
+      return
+    end
+    local cache_key = M.cache_key(context_result.content, buffer_before, buffer_after, opts, system_prompt)
     local snapshot = {
       generation = generation,
       bufnr = bufnr,
@@ -333,17 +378,7 @@ function M.trigger(automatic, scheduled_generation)
       col = cursor[2],
       mode = vim.api.nvim_get_mode().mode,
     }
-    local request_candidates = opts.backend == 'codex' and 1 or opts.n_candidates
-    local request = {
-      system = openai.system_prompt(request_candidates, opts.max_candidate_lines, opts.max_candidate_chars),
-      context = context_result.content,
-      buffer_before = buffer_before,
-      buffer_after = buffer_after,
-      pane_id = context_result.pane_id,
-      n_candidates = request_candidates,
-      max_candidate_lines = opts.max_candidate_lines,
-      max_candidate_chars = opts.max_candidate_chars,
-    }
+    local request = build_request(opts, request_candidates, system_prompt, context_result, buffer_before, buffer_after)
 
     local cached = cache_get(cache_key)
     if cached then
@@ -414,9 +449,16 @@ function M.schedule_auto(bufnr)
   start_auto_timer(bufnr, state, state.generation, opts.auto_trigger.debounce_ms)
 end
 
-function M.cache_key(pane_content, buffer_before, buffer_after, opts)
+function M.cache_key(pane_content, buffer_before, buffer_after, opts, system_prompt)
+  assert(type(system_prompt) == 'string' and system_prompt ~= '', 'resolved system prompt is required')
   local draft_hash = context.hash(buffer_before .. '\0' .. buffer_after)
-  return context.hash(pane_content) .. '\0' .. draft_hash .. '\0' .. cache_signature(opts)
+  return context.hash(pane_content)
+    .. '\0'
+    .. draft_hash
+    .. '\0'
+    .. context.hash(system_prompt)
+    .. '\0'
+    .. cache_signature(opts)
 end
 
 function M.complete_cmp(callback, manual)
@@ -433,6 +475,12 @@ function M.complete_cmp(callback, manual)
 
   local backend = backends[opts.backend]
   if not backend or (backend.is_available and not backend.is_available(opts[opts.backend])) then
+    callback({})
+    return
+  end
+  local system_prompt, prompt_error = resolve_system_prompt(opts, opts.n_candidates)
+  if not system_prompt then
+    log.add('error', prompt_error)
     callback({})
     return
   end
@@ -480,7 +528,7 @@ function M.complete_cmp(callback, manual)
       end
       local cursor = vim.api.nvim_win_get_cursor(0)
       local buffer_before, buffer_after = buffer_around_cursor(bufnr, cursor)
-      local key = M.cache_key(context_result.content, buffer_before, buffer_after, opts)
+      local key = M.cache_key(context_result.content, buffer_before, buffer_after, opts, system_prompt)
       local cached = cache_get(key)
       if cached then
         complete_once(limit_candidates(cached, opts.max_candidate_lines, opts.max_candidate_chars))
@@ -503,7 +551,9 @@ function M.complete_cmp(callback, manual)
       end
 
       cancel_in_flight(bufnr, state)
-      ghost.dismiss(bufnr)
+      if opts.cmp.dismiss_ghost_on_menu_open then
+        ghost.dismiss(bufnr)
+      end
       state.generation = state.generation + 1
       local generation = state.generation
 
@@ -514,16 +564,7 @@ function M.complete_cmp(callback, manual)
         col = cursor[2],
         mode = vim.api.nvim_get_mode().mode,
       }
-      local request = {
-        system = openai.system_prompt(opts.n_candidates, opts.max_candidate_lines, opts.max_candidate_chars),
-        context = context_result.content,
-        buffer_before = buffer_before,
-        buffer_after = buffer_after,
-        pane_id = context_result.pane_id,
-        n_candidates = opts.n_candidates,
-        max_candidate_lines = opts.max_candidate_lines,
-        max_candidate_chars = opts.max_candidate_chars,
-      }
+      local request = build_request(opts, opts.n_candidates, system_prompt, context_result, buffer_before, buffer_after)
 
       local slot = { key = key, waiters = {} }
       state.request = slot
@@ -623,6 +664,10 @@ end
 
 function M._limit_candidates(candidates, max_lines, max_chars)
   return limit_candidates(candidates, max_lines, max_chars)
+end
+
+function M._resolve_system_prompt(opts, n_candidates)
+  return resolve_system_prompt(opts, n_candidates)
 end
 
 function M.is_attached(bufnr)

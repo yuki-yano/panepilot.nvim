@@ -71,13 +71,33 @@ require('panepilot').setup({
   n_candidates = 3,
   max_candidate_lines = 2,
   max_candidate_chars = 80,
-  cmp = { enabled = true },
+  system_prompt = nil,
+  cmp = {
+    enabled = true,
+    dismiss_ghost_on_menu_open = true,
+  },
 })
 ```
 
 `n_candidates` には1から3までの整数を指定します。
 `max_candidate_lines` と `max_candidate_chars` はすべてのバックエンドに適用し、任意の正の整数へ変更できます。
 モデルには両方の上限内で自然に完結するよう指示し、超過した応答は表示またはnvim-cmpへの受け渡し前に切り詰めます。
+
+`system_prompt` を省略すると組み込みpromptを使います。
+空でない文字列を指定するとその内容へ差し替え、関数を指定すると解決済みの生成設定を基に動的なpromptを返せます。
+
+```lua
+require('panepilot').setup({
+  system_prompt = function(ctx)
+    return ctx.default_prompt .. '\n現在の文を簡潔に続けることを優先してください。'
+  end,
+})
+```
+
+関数には `backend`、`n_candidates`、`max_candidate_lines`、`max_candidate_chars`、`default_prompt` を渡します。
+関数は補完リクエストごとに同期的に1回実行し、Codexバックエンドでは `n_candidates` が `1` になります。
+関数は空でない文字列を返す必要があり、エラーまたは不正な戻り値があるとその補完を中止して `:PanepilotLog` に記録します。
+解決したpromptはOpenAI、Claude、Codexのすべてに適用し、補完キャッシュの識別にも含めます。
 
 `context.mask_patterns` にはLuaパターンのルールと変換関数を指定できます。
 これらのルールは組み込みのマスキング後に実行します。
@@ -96,6 +116,9 @@ require('panepilot').setup({
 ```
 
 `PanepilotGhost` は既定で `Comment` に、`PanepilotSpinner` は `Special` にリンクします。
+
+`cmp.dismiss_ghost_on_menu_open` は既定で2つの補完UIを排他表示にします。
+`false` にするとnvim-cmpメニューの表示中や新しい候補の要求中もPanepilotのghost textを保持し、後述のキーマップ例ではnvim-cmpの選択項目よりghost textを先に確定します。
 
 ## バックエンド
 
@@ -192,7 +215,7 @@ vim.api.nvim_create_autocmd('FileType', {
 - 自動補完とnvim-cmpからのリクエストではspinnerを表示しません。
 - ghost textとspinnerはバッファ本文を変更しない仮想装飾であり、ghost textの先頭行とspinnerを `overlay` で描画するため、表示しても実カーソルは移動しません。
 - カーソル移動、テキスト変更、挿入モードの終了、バッファ移動、`dismiss()` の呼び出しは、実行中のリクエストをキャンセルして表示を消します。
-- nvim-cmpのメニューを開くと、補完UIの重複を避けるためghost textを消します。
+- nvim-cmpのメニューを開くと既定では補完UIの重複を避けるためghost textを消し、`cmp.dismiss_ghost_on_menu_open = false` を指定すると保持します。
 
 ## プライバシー
 

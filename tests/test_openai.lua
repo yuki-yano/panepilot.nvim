@@ -7,6 +7,7 @@ local openai = require('panepilot.backend.openai')
 local T = new_set()
 
 local request = {
+  system = 'system prompt',
   context = 'pane output',
   buffer_before = 'draft before',
   buffer_after = 'draft after',
@@ -58,7 +59,7 @@ T['build_payload()']['builds the Responses API request in cache-friendly order']
   eq(payload.reasoning, { effort = 'none' })
   eq(payload.max_output_tokens, 400)
   eq(payload.prompt_cache_key, 'panepilot:%4')
-  eq(payload.instructions, openai.system_prompt(2, 2, 80))
+  eq(payload.instructions, 'system prompt')
   eq(
     payload.input,
     '<terminal_context>\npane output\n</terminal_context>\n<draft>\ndraft before<cursor/>draft after\n</draft>'

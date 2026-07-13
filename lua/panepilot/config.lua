@@ -32,7 +32,10 @@ M.defaults = {
   n_candidates = 3,
   max_candidate_lines = 2,
   max_candidate_chars = 80,
-  cmp = { enabled = true },
+  cmp = {
+    enabled = true,
+    dismiss_ghost_on_menu_open = true,
+  },
 }
 
 local values = vim.deepcopy(M.defaults)
@@ -82,6 +85,12 @@ local function validate(opts)
   end
   if not is_positive_integer(opts.max_candidate_chars) then
     return false, 'max_candidate_chars must be a positive integer'
+  end
+  if opts.system_prompt ~= nil and type(opts.system_prompt) ~= 'string' and type(opts.system_prompt) ~= 'function' then
+    return false, 'system_prompt must be a non-empty string, function, or nil'
+  end
+  if type(opts.system_prompt) == 'string' and opts.system_prompt == '' then
+    return false, 'system_prompt must be a non-empty string, function, or nil'
   end
   if type(opts.openai) ~= 'table' then
     return false, 'openai must be a table'
@@ -145,8 +154,14 @@ local function validate(opts)
   if type(opts.auto_trigger.pane_quiet_sec) ~= 'number' or opts.auto_trigger.pane_quiet_sec < 0 then
     return false, 'auto_trigger.pane_quiet_sec must be a non-negative number'
   end
-  if type(opts.cmp) ~= 'table' or type(opts.cmp.enabled) ~= 'boolean' then
+  if type(opts.cmp) ~= 'table' then
+    return false, 'cmp must be a table'
+  end
+  if type(opts.cmp.enabled) ~= 'boolean' then
     return false, 'cmp.enabled must be a boolean'
+  end
+  if type(opts.cmp.dismiss_ghost_on_menu_open) ~= 'boolean' then
+    return false, 'cmp.dismiss_ghost_on_menu_open must be a boolean'
   end
 
   return true
