@@ -38,6 +38,39 @@ local function limit_candidates(candidates, max_lines, max_chars)
   return limited
 end
 
+local function strip_suffix_overlap(candidate, line_suffix)
+  local candidate_chars = vim.fn.strchars(candidate)
+  local suffix_chars = vim.fn.strchars(line_suffix)
+  for count = math.min(candidate_chars, suffix_chars), 1, -1 do
+    if vim.fn.strcharpart(candidate, candidate_chars - count, count) == vim.fn.strcharpart(line_suffix, 0, count) then
+      return vim.fn.strcharpart(candidate, 0, candidate_chars - count)
+    end
+  end
+  return candidate
+end
+
+local function normalize_candidates(candidates, buffer_before, buffer_after)
+  local line_prefix = buffer_before:match('([^\n]*)$') or ''
+  local line_suffix = (buffer_after or ''):match('^([^\n]*)') or ''
+  local repeated_line = line_prefix:find('%S') ~= nil
+  local normalized = {}
+
+  for _, original in ipairs(candidates) do
+    local candidate = original
+    if repeated_line and candidate:sub(1, #line_prefix) == line_prefix then
+      candidate = candidate:sub(#line_prefix + 1)
+    end
+    if line_suffix ~= '' then
+      candidate = strip_suffix_overlap(candidate, line_suffix)
+    end
+    if candidate ~= '' then
+      table.insert(normalized, candidate)
+    end
+  end
+
+  return normalized
+end
+
 local function resolve_system_prompt(opts, n_candidates)
   local default_prompt = openai.system_prompt(n_candidates, opts.max_candidate_lines, opts.max_candidate_chars)
   if opts.system_prompt == nil then
@@ -183,6 +216,22 @@ local function cmp_visible()
   end
   local visible_ok, visible = pcall(cmp.visible)
   return visible_ok and visible == true
+end
+
+local function refresh_visible_cmp()
+  if not cmp_visible() then
+    return
+  end
+
+  local ok, cmp = pcall(require, 'cmp')
+  if not ok then
+    return
+  end
+  vim.schedule(function()
+    if cmp_visible() then
+      cmp.complete()
+    end
+  end)
 end
 
 local function skkeleton_enabled()
@@ -386,6 +435,9 @@ function M.trigger(automatic, scheduled_generation)
       stop_spinner()
       if snapshot_is_current(snapshot) and (not automatic or not auto_suppressed()) then
         ghost.show(bufnr, snapshot.row - 1, snapshot.col, cached)
+        if not automatic then
+          refresh_visible_cmp()
+        end
       end
       return
     end
@@ -409,7 +461,8 @@ function M.trigger(automatic, scheduled_generation)
         handle_failure(result)
         return
       end
-      local candidates = limit_candidates(result.candidates, opts.max_candidate_lines, opts.max_candidate_chars)
+      local candidates = normalize_candidates(result.candidates, buffer_before, buffer_after)
+      candidates = limit_candidates(candidates, opts.max_candidate_lines, opts.max_candidate_chars)
       cache_put(cache_key, candidates)
       notify_waiters(slot, candidates)
       if not snapshot_is_current(snapshot) then
@@ -420,6 +473,9 @@ function M.trigger(automatic, scheduled_generation)
       end
 
       ghost.show(bufnr, snapshot.row - 1, snapshot.col, candidates)
+      if not automatic then
+        refresh_visible_cmp()
+      end
     end, opts[opts.backend])
     if not completed and state_for(bufnr) == state and state.request == slot then
       state.handle = handle
@@ -538,16 +594,18 @@ function M.complete_cmp(callback, manual)
         table.insert(state.request.waiters, complete_once)
         return
       end
-      if cmp_request_suppressed() then
-        complete_once({})
-        return
-      end
+      if not manual then
+        if cmp_request_suppressed() then
+          complete_once({})
+          return
+        end
 
-      local quiet, _, retry_after_ms =
-        context.observe_pane(context_result.pane_id, context_result.content, opts.auto_trigger.pane_quiet_sec)
-      if not quiet then
-        vim.defer_fn(attempt, math.max(0, math.ceil(retry_after_ms)))
-        return
+        local quiet, _, retry_after_ms =
+          context.observe_pane(context_result.pane_id, context_result.content, opts.auto_trigger.pane_quiet_sec)
+        if not quiet then
+          vim.defer_fn(attempt, math.max(0, math.ceil(retry_after_ms)))
+          return
+        end
       end
 
       cancel_in_flight(bufnr, state)
@@ -589,7 +647,8 @@ function M.complete_cmp(callback, manual)
           return
         end
 
-        local candidates = limit_candidates(result.candidates, opts.max_candidate_lines, opts.max_candidate_chars)
+        local candidates = normalize_candidates(result.candidates, buffer_before, buffer_after)
+        candidates = limit_candidates(candidates, opts.max_candidate_lines, opts.max_candidate_chars)
         cache_put(key, candidates)
         notify_waiters(slot, candidates)
         complete_once(candidates)
@@ -664,6 +723,10 @@ end
 
 function M._limit_candidates(candidates, max_lines, max_chars)
   return limit_candidates(candidates, max_lines, max_chars)
+end
+
+function M._normalize_candidates(candidates, buffer_before, buffer_after)
+  return normalize_candidates(candidates, buffer_before, buffer_after)
 end
 
 function M._resolve_system_prompt(opts, n_candidates)

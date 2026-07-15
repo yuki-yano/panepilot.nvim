@@ -465,6 +465,32 @@ T['ghost']['shows multiline virtual text and accepts it at the extmark'] = funct
   eq(ghost.visible(bufnr), false)
 end
 
+T['ghost']['accepts completion in a separate undo block'] = function()
+  local child = helpers.new_child_neovim()
+  child.setup()
+  child.lua([[
+    vim.bo.undolevels = 123
+    _G.global_undolevels = vim.go.undolevels
+  ]])
+  child.type_keys('idraft')
+  child.lua([[
+    local bufnr = vim.api.nvim_get_current_buf()
+    local cursor = vim.api.nvim_win_get_cursor(0)
+    local ghost = require('panepilot.ghost')
+    ghost.show(bufnr, cursor[1] - 1, cursor[2], { ' completion' })
+    assert(ghost.accept())
+  ]])
+
+  eq(child.lua_get([[vim.api.nvim_get_current_line()]]), 'draft completion')
+  eq(child.lua_get([[vim.go.undolevels]]), child.lua_get('_G.global_undolevels'))
+  eq(child.lua_get([[vim.bo.undolevels]]), 123)
+  child.type_keys('<Esc>u')
+  eq(child.lua_get([[vim.api.nvim_get_current_line()]]), 'draft')
+  child.type_keys('u')
+  eq(child.lua_get([[vim.api.nvim_get_current_line()]]), '')
+  child.stop()
+end
+
 T['ghost']['dismisses without changing the buffer'] = function()
   local ghost = require('panepilot.ghost')
   local bufnr = vim.api.nvim_create_buf(false, true)

@@ -64,6 +64,10 @@ local function set_cursor_after(bufnr, row, col, parts)
   return cursor[1] - 1, cursor[2]
 end
 
+local function close_undo_block()
+  vim.go.undolevels = vim.go.undolevels
+end
+
 local function insert_prefix(bufnr, prefix, remaining)
   local state = states[bufnr]
   if not state or not M.visible(bufnr) then
@@ -74,6 +78,7 @@ local function insert_prefix(bufnr, prefix, remaining)
   local position = assert(extmark_position(bufnr, state.extmark_id))
   delete_extmark(bufnr, state)
   local parts = split_candidate(prefix)
+  close_undo_block()
   vim.api.nvim_buf_set_text(bufnr, position[1], position[2], position[1], position[2], parts)
   internal_changes[bufnr] = vim.api.nvim_buf_get_changedtick(bufnr)
   local row, col = set_cursor_after(bufnr, position[1], position[2], parts)

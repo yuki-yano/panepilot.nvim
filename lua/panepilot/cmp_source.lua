@@ -25,10 +25,11 @@ function Source:is_available()
 end
 
 function Source:get_keyword_pattern()
-  -- Candidates are continuations inserted at the cursor, not replacements for
-  -- the keyword before it. A zero-width end-of-input match keeps nvim-cmp's
-  -- source offset at the cursor for filtering and confirmation.
-  return [[\%$]]
+  -- nvim-cmp does not automatically request a source whose keyword starts at
+  -- the cursor. Match the final character to participate in automatic
+  -- completion, then use a zero-width text edit in complete() so confirmation
+  -- still inserts a continuation without replacing that character.
+  return [[.]]
 end
 
 function Source:complete(params, callback)
@@ -37,13 +38,27 @@ function Source:complete(params, callback)
     and params.context:get_reason() == 'manual'
   require('panepilot.engine').complete_cmp(function(candidates)
     local items = {}
+    local context = params.context
+    local filter_prefix = context and params.offset and context.cursor_before_line:sub(params.offset) or ''
     for _, candidate in ipairs(candidates) do
-      table.insert(items, {
+      local item = {
         label = label_for(candidate),
         documentation = candidate,
+        filterText = filter_prefix .. candidate,
         insertText = candidate,
         menu = '[Panepilot]',
-      })
+      }
+      if context and context.cursor then
+        local position = {
+          line = context.cursor.line,
+          character = context.cursor.character,
+        }
+        item.textEdit = {
+          newText = candidate,
+          range = { start = position, ['end'] = position },
+        }
+      end
+      table.insert(items, item)
     end
     callback({ items = items, isIncomplete = false })
   end, manual)

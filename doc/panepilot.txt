@@ -21,6 +21,8 @@ through nvim-cmp.
 Manual completion shows a delayed spinner without moving the real cursor.
 At the start of any line, automatic ghost text and automatic nvim-cmp requests
 stay idle; manual trigger() and manual nvim-cmp completion remain available.
+Manual nvim-cmp completion does not wait for pane quiet time and remains
+available while automatic requests are suppressed by skkeleton or HTTP 429.
 Only the captured pane is masked. The complete editprompt draft is sent to the
 backend without masking.
 

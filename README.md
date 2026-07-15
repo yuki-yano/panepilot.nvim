@@ -208,8 +208,8 @@ Use `<C-v><Tab>` to insert a literal tab.
 - Automatic completion uses the OpenAI or Claude API backend after `auto_trigger.debounce_ms` and waits until the pane has been unchanged for `auto_trigger.pane_quiet_sec`.
 - At the start of any line, including an empty draft, automatic ghost completion and automatically triggered nvim-cmp requests stay idle; `trigger()` and manually invoked nvim-cmp completion remain available.
 - Automatic ghost text is suppressed while the nvim-cmp menu is visible or skkeleton is enabled.
-- New backend requests from panepilot's nvim-cmp source are suppressed while skkeleton is enabled.
-- HTTP 429 pauses new automatic ghost text and nvim-cmp backend requests until `resume_auto()` is called; manual completion remains available.
+- Automatic backend requests from panepilot's nvim-cmp source are suppressed while skkeleton is enabled. Manual nvim-cmp completion such as `<C-Space>` remains available.
+- HTTP 429 pauses new automatic ghost text and automatic nvim-cmp requests until `resume_auto()` is called; manual completion remains available.
 - Manual completion shows a one-cell spinner one cell to the right of the cursor after 200 ms. Automatic and nvim-cmp requests do not show it.
 - Ghost text and the spinner are virtual decorations that do not change buffer text or move the real cursor; the first ghost line and spinner use overlays.
 - Moving the cursor, changing text, leaving insert mode, leaving the buffer, or calling `dismiss()` cancels the current request and removes its UI.

@@ -209,8 +209,8 @@ vim.api.nvim_create_autocmd('FileType', {
 - 自動補完はOpenAIまたはClaudeのAPIバックエンドで動作し、`auto_trigger.debounce_ms` の経過後、ペインの内容が `auto_trigger.pane_quiet_sec` の間変化していないことを確認して実行します。
 - 空のdraftを含む各行の行頭では、自動ghost textとnvim-cmpからの自動リクエストを開始せず、`trigger()` またはnvim-cmpの手動補完を実行した場合だけ候補を取得します。
 - nvim-cmpのメニュー表示中またはskkeletonの有効中は、自動ghost textを抑制します。
-- skkeletonの有効中は、panepilotのnvim-cmpソースから新しいバックエンドリクエストを開始しません。
-- HTTP 429を受けると、新しい自動ghost textとnvim-cmpのバックエンドリクエストを停止し、`resume_auto()` が呼ばれるまで再開しません。手動補完は停止しません。
+- skkeletonの有効中は、panepilotのnvim-cmpソースから自動バックエンドリクエストを開始しません。`<C-Space>` などによる手動nvim-cmp補完は実行します。
+- HTTP 429を受けると、新しい自動ghost textと自動nvim-cmpリクエストを停止し、`resume_auto()` が呼ばれるまで再開しません。手動補完は停止しません。
 - 手動補完が200 msを超えると、カーソルの右側に1セル幅のspinnerを表示します。
 - 自動補完とnvim-cmpからのリクエストではspinnerを表示しません。
 - ghost textとspinnerはバッファ本文を変更しない仮想装飾であり、ghost textの先頭行とspinnerを `overlay` で描画するため、表示しても実カーソルは移動しません。

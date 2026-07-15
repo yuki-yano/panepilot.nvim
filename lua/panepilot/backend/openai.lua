@@ -19,6 +19,7 @@ local function system_prompt(n_candidates, max_candidate_lines, max_candidate_ch
       max_candidate_chars
     ),
     '- 各候補は <cursor/> の直後に挿入されるテキストそのものだけを含める(前置き・引用符・説明・<draft> 内の既存テキストの繰り返しを含めない)',
+    '- <cursor/> の後ろに既存テキストがある場合は、そのテキストを変更・言い換え・繰り返さず、自然につなぐために不足している部分だけを生成する',
     '- ターミナル画面でエージェントが質問や確認をしている場合は、それに答える方向の候補を優先する',
   }, '\n')
 end
