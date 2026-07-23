@@ -13,10 +13,10 @@ CONTENTS                                                     *panepilot-contents
 ===============================================================================
 INTRODUCTION                                                   *panepilot-intro*
 
-panepilot.nvim captures the destination tmux pane selected by editprompt and
-uses it as context for OpenAI, Claude, or Codex prompt completion. It renders
-multiline ghost text and, with either API backend, provides the same candidates
-through nvim-cmp.
+panepilot.nvim captures the destination tmux or Herdr pane selected by
+editprompt and uses it as context for OpenAI, Claude, or Codex prompt
+completion. It renders multiline ghost text and, with either API backend,
+provides the same candidates through nvim-cmp.
 
 Manual completion shows a delayed spinner without moving the real cursor.
 At the start of any line, automatic ghost text and automatic nvim-cmp requests
@@ -29,9 +29,15 @@ backend without masking.
 The plugin is active only when EDITPROMPT=1 and 'filetype' is
 markdown.editprompt. It does not install keymaps.
 
-Requirements: Neovim 0.11+, tmux, curl 8.3+ and PANEPILOT_API_KEY for
-OpenAI, curl 8.3+ and PANEPILOT_API_KEY for Claude, or the codex executable
-for Codex.
+Requirements: Neovim 0.11+, tmux or Herdr, curl 8.3+ and PANEPILOT_API_KEY
+for OpenAI, curl 8.3+ and PANEPILOT_API_KEY for Claude, or the codex
+executable for Codex.
+
+Panepilot detects Herdr from HERDR_ENV=1 or HERDR_ACTIVE_PANE_ID, otherwise it
+detects tmux from TMUX_PANE. Herdr wins when both environments are present.
+For Herdr, editprompt must pass EDITPROMPT_TARGET_PANE=<pane-id> to the editor
+process. Panepilot reads recent unwrapped output from that pane and does not
+infer the target from Herdr's active or editor pane.
 
 ===============================================================================
 SETUP                                                           *panepilot-setup*
@@ -48,13 +54,14 @@ See README.md or README.ja.md for complete keymap and lazy.nvim examples.
 COMMANDS                                                     *panepilot-commands*
 
 :PanepilotDebugContext
-    Open the masked tmux context that would be sent to the backend.
+    Open the masked pane context that would be sent to the backend.
 
 :PanepilotLog
     Open the in-memory diagnostic ring. No log file is written.
 
 :checkhealth panepilot
-    Check Neovim, tmux, target pane, curl, API key, and backend availability.
+    Check Neovim, the selected multiplexer, target pane, curl, API key, and
+    backend availability.
 
 ===============================================================================
 LUA API                                                          *panepilot-api*
@@ -143,7 +150,7 @@ part of the completion cache identity. Function errors are in :PanepilotLog.
 ===============================================================================
 PRIVACY                                                     *panepilot-privacy*
 
-Only captured tmux context is masked. The complete editprompt draft is sent
+Only captured pane context is masked. The complete editprompt draft is sent
 without masking. Built-in rules mask long sk-... tokens and values assigned to
 keys ending in key, token, secret, password, passwd, or credential.
 

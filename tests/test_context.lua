@@ -17,6 +17,112 @@ T['parse_target_panes()']['returns nil for missing values'] = function()
   eq(context.parse_target_panes('  ,  '), nil)
 end
 
+T['multiplexer()'] = new_set()
+
+T['multiplexer()']['prefers Herdr when Herdr runs inside tmux'] = function()
+  local original_herdr = vim.env.HERDR_ENV
+  local original_tmux = vim.env.TMUX_PANE
+  vim.env.HERDR_ENV = '1'
+  vim.env.TMUX_PANE = '%4'
+
+  local multiplexer = context.multiplexer()
+
+  vim.env.HERDR_ENV = original_herdr
+  vim.env.TMUX_PANE = original_tmux
+  eq(multiplexer, 'herdr')
+end
+
+T['multiplexer()']['detects tmux from its pane environment'] = function()
+  local original_herdr = vim.env.HERDR_ENV
+  local original_tmux = vim.env.TMUX_PANE
+  vim.env.HERDR_ENV = nil
+  vim.env.TMUX_PANE = '%4'
+
+  local multiplexer = context.multiplexer()
+
+  vim.env.HERDR_ENV = original_herdr
+  vim.env.TMUX_PANE = original_tmux
+  eq(multiplexer, 'tmux')
+end
+
+T['multiplexer()']['detects a Herdr custom command environment'] = function()
+  local original_herdr = vim.env.HERDR_ENV
+  local original_active = vim.env.HERDR_ACTIVE_PANE_ID
+  local original_tmux = vim.env.TMUX_PANE
+  vim.env.HERDR_ENV = nil
+  vim.env.HERDR_ACTIVE_PANE_ID = 'w1:p2'
+  vim.env.TMUX_PANE = '%4'
+
+  local multiplexer = context.multiplexer()
+
+  vim.env.HERDR_ENV = original_herdr
+  vim.env.HERDR_ACTIVE_PANE_ID = original_active
+  vim.env.TMUX_PANE = original_tmux
+  eq(multiplexer, 'herdr')
+end
+
+T['resolve_target_pane()'] = new_set()
+
+T['resolve_target_pane()']['resolves a Herdr target from editprompt'] = function()
+  local original_herdr = vim.env.HERDR_ENV
+  local original_target = vim.env.EDITPROMPT_TARGET_PANE
+  vim.env.HERDR_ENV = '1'
+  vim.env.EDITPROMPT_TARGET_PANE = ' w1:p2 '
+
+  local result
+  context.resolve_target_pane(function(value)
+    result = value
+  end)
+  vim.wait(1000, function()
+    return result ~= nil
+  end)
+
+  vim.env.HERDR_ENV = original_herdr
+  vim.env.EDITPROMPT_TARGET_PANE = original_target
+  eq(result, { ok = true, multiplexer = 'herdr', pane_id = 'w1:p2' })
+end
+
+T['resolve_target_pane()']['does not use the editor Herdr pane as the target'] = function()
+  local original_herdr = vim.env.HERDR_ENV
+  local original_target = vim.env.EDITPROMPT_TARGET_PANE
+  local original_pane = vim.env.HERDR_PANE_ID
+  vim.env.HERDR_ENV = '1'
+  vim.env.EDITPROMPT_TARGET_PANE = nil
+  vim.env.HERDR_PANE_ID = 'w1:p5'
+
+  local pane_id, message = context.resolve_target_pane_sync()
+
+  vim.env.HERDR_ENV = original_herdr
+  vim.env.EDITPROMPT_TARGET_PANE = original_target
+  vim.env.HERDR_PANE_ID = original_pane
+  eq(pane_id, nil)
+  eq(message, 'EDITPROMPT_TARGET_PANE is not set')
+end
+
+T['capture_pane()'] = new_set()
+
+T['capture_pane()']['reads recent Herdr output with the configured line count'] = function()
+  local original_system = vim.system
+  local observed_args
+  vim.system = function(args, _, on_exit)
+    observed_args = args
+    on_exit({ code = 0, stdout = 'pane output', stderr = '' })
+    return {}
+  end
+
+  local result
+  context.capture_pane('herdr', 'w1:p2', 300, function(value)
+    result = value
+  end)
+  vim.wait(1000, function()
+    return result ~= nil
+  end)
+  vim.system = original_system
+
+  eq(observed_args, { 'herdr', 'pane', 'read', 'w1:p2', '--source', 'recent-unwrapped', '--lines', '300' })
+  eq(result, { ok = true, content = 'pane output' })
+end
+
 T['mask()'] = new_set()
 
 T['mask()']['masks long OpenAI and Anthropic-style tokens but preserves short matches'] = function()

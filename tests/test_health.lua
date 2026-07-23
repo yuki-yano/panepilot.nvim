@@ -107,4 +107,17 @@ T['check()']['reports the shared default API key once for the selected backend']
   eq(matches, { { level = 'ok', message = key_env .. ' is set for the Claude backend' } })
 end
 
+T['check()']['reports the Herdr target pane'] = function()
+  local original_herdr = vim.env.HERDR_ENV
+  local original_target = vim.env.EDITPROMPT_TARGET_PANE
+  vim.env.HERDR_ENV = '1'
+  vim.env.EDITPROMPT_TARGET_PANE = 'w1:p2'
+
+  local entry = find_message(check_messages(), 'Target pane:')
+
+  vim.env.HERDR_ENV = original_herdr
+  vim.env.EDITPROMPT_TARGET_PANE = original_target
+  eq(entry, { level = 'ok', message = 'Target pane: w1:p2' })
+end
+
 return T

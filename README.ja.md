@@ -3,7 +3,7 @@
 [English](README.md)
 
 `panepilot.nvim` は、[editprompt](https://github.com/eetann/editprompt) でAIコーディングエージェント宛のプロンプトを書くときに、続きを補完するNeovimプラグインです。
-送信先のtmuxペインを取得し、既知のAPIキー形式と機密情報を示すキー名に対応する値をマスキングしてから、ターミナルの文脈と入力中のプロンプトを基に最大3件の候補を生成します。
+送信先のtmuxまたは[Herdr](https://herdr.dev/)ペインを取得し、既知のAPIキー形式と機密情報を示すキー名に対応する値をマスキングしてから、ターミナルの文脈と入力中のプロンプトを基に最大3件の候補を生成します。
 選択中の候補は複数行のghost textとして表示し、OpenAIとClaudeのAPIバックエンドでは同じ候補群をnvim-cmpにも提供できます。
 
 `EDITPROMPT=1` かつfiletypeが `markdown.editprompt` の場合にだけ動作します。
@@ -12,7 +12,7 @@
 ## 必要環境
 
 - Neovim 0.11以降
-- tmux
+- tmuxまたはHerdr
 - OpenAIバックエンド：curl 8.3以降と `PANEPILOT_API_KEY`
 - Claudeバックエンド：curl 8.3以降と `PANEPILOT_API_KEY`
 - Codexバックエンド：`codex` コマンド
@@ -205,7 +205,10 @@ vim.api.nvim_create_autocmd('FileType', {
 
 ## 動作
 
-- tmux option `@editprompt_target_panes` の先頭に登録されたペインを送信先として使います。
+- Panepilotは `HERDR_ENV=1` または `HERDR_ACTIVE_PANE_ID` からHerdrを判定し、それ以外では `TMUX_PANE` からtmuxを判定します。両方の環境が検出された場合はHerdrを優先します。
+- tmuxでは、tmux option `@editprompt_target_panes` の先頭に登録されたペインを送信先として使います。
+- Herdrでは、`EDITPROMPT_TARGET_PANE` を送信先として使います。editpromptはこの環境変数をエディタプロセスへ渡す必要があり、PanepilotはHerdrのactive paneやeditor paneから送信先を推測しません。
+- Herdrの文脈は `herdr pane read <pane> --source recent-unwrapped --lines <context.lines>` で取得します。
 - 自動補完はOpenAIまたはClaudeのAPIバックエンドで動作し、`auto_trigger.debounce_ms` の経過後、ペインの内容が `auto_trigger.pane_quiet_sec` の間変化していないことを確認して実行します。
 - 空のdraftを含む各行の行頭では、自動ghost textとnvim-cmpからの自動リクエストを開始せず、`trigger()` またはnvim-cmpの手動補完を実行した場合だけ候補を取得します。
 - nvim-cmpのメニュー表示中またはskkeletonの有効中は、自動ghost textを抑制します。
@@ -219,8 +222,8 @@ vim.api.nvim_create_autocmd('FileType', {
 
 ## プライバシー
 
-各リクエストには、マスキング済みのtmux文脈と、カーソル位置を示すマーカーを加えたeditpromptの全文を含めます。
-`context.mask_patterns` を含むマスキングは取得したtmux文脈だけに適用し、editpromptの本文はマスキングせずに送信します。
+各リクエストには、マスキング済みの送信先ペインの文脈と、カーソル位置を示すマーカーを加えたeditpromptの全文を含めます。
+`context.mask_patterns` を含むマスキングは取得したペイン文脈だけに適用し、editpromptの本文はマスキングせずに送信します。
 組み込みルールは長い `sk-...` トークンと、名前が `key`、`token`、`secret`、`password`、`passwd`、`credential` で終わるキーに対応する値をマスキングします。
 マスキングはすべての機密情報の除去を保証しません。
 機密情報を扱う環境では `:PanepilotDebugContext` で送信予定のペイン文脈を確認し、必要な `context.mask_patterns` を追加してください。
@@ -233,9 +236,9 @@ Codexにもstdinからプロンプトを渡します。
 
 | コマンド | 説明 |
 | --- | --- |
-| `:PanepilotDebugContext` | バックエンドへ送るマスキング済みのtmux文脈を開きます。 |
+| `:PanepilotDebugContext` | バックエンドへ送るマスキング済みのペイン文脈を開きます。 |
 | `:PanepilotLog` | メモリ上の診断ログを開きます。ログファイルは作成しません。 |
-| `:checkhealth panepilot` | `EDITPROMPT`、tmux、送信先ペイン、すべてのバックエンドの依存、設定を確認します。 |
+| `:checkhealth panepilot` | `EDITPROMPT`、選択中のmultiplexer、送信先ペイン、すべてのバックエンドの依存、設定を確認します。 |
 
 | 関数 | 説明 |
 | --- | --- |

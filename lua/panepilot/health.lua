@@ -30,10 +30,15 @@ function M.check()
     health.info(curl_message .. ' (optional API backends are inactive)')
   end
 
-  if vim.fn.executable('tmux') == 1 then
-    health.ok('tmux is executable')
+  local multiplexer = context.multiplexer()
+  if multiplexer then
+    if vim.fn.executable(multiplexer) == 1 then
+      health.ok(multiplexer .. ' is executable')
+    else
+      health.error(multiplexer .. ' was not found')
+    end
   else
-    health.error('tmux was not found')
+    health.error('tmux or Herdr environment was not detected')
   end
 
   if vim.env.EDITPROMPT == '1' then
@@ -42,16 +47,11 @@ function M.check()
     health.warn('EDITPROMPT is not 1; panepilot is inactive')
   end
 
-  if vim.env.TMUX_PANE and vim.env.TMUX_PANE ~= '' then
-    health.ok('TMUX_PANE is set')
-    local pane_id, pane_error = context.resolve_target_pane_sync()
-    if pane_id then
-      health.ok('Target pane: ' .. pane_id)
-    else
-      health.warn('Target pane is unavailable: ' .. pane_error)
-    end
+  local pane_id, pane_error = context.resolve_target_pane_sync()
+  if pane_id then
+    health.ok('Target pane: ' .. pane_id)
   else
-    health.warn('TMUX_PANE is not set')
+    health.warn('Target pane is unavailable: ' .. pane_error)
   end
 
   local openai_config = opts.openai

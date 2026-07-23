@@ -148,12 +148,39 @@ function M._reset_observations()
   pane_observations = {}
 end
 
+function M.multiplexer()
+  if vim.env.HERDR_ENV == '1' or (vim.env.HERDR_ACTIVE_PANE_ID and vim.env.HERDR_ACTIVE_PANE_ID ~= '') then
+    return 'herdr'
+  end
+  if vim.env.TMUX_PANE and vim.env.TMUX_PANE ~= '' then
+    return 'tmux'
+  end
+  return nil
+end
+
+local function resolve_herdr_target_pane()
+  local pane_id = vim.env.EDITPROMPT_TARGET_PANE
+  if not pane_id or vim.trim(pane_id) == '' then
+    return nil, 'EDITPROMPT_TARGET_PANE is not set'
+  end
+  return vim.trim(pane_id)
+end
+
 function M.resolve_target_pane(callback)
-  local tmux_pane = vim.env.TMUX_PANE
-  if not tmux_pane or tmux_pane == '' then
-    schedule(callback, { ok = false, message = 'TMUX_PANE is not set' })
+  local multiplexer = M.multiplexer()
+  if not multiplexer then
+    schedule(callback, { ok = false, message = 'tmux or Herdr environment was not detected' })
     return nil
   end
+  if multiplexer == 'herdr' then
+    local pane_id, message = resolve_herdr_target_pane()
+    schedule(
+      callback,
+      pane_id and { ok = true, multiplexer = multiplexer, pane_id = pane_id } or { ok = false, message = message }
+    )
+    return nil
+  end
+  local tmux_pane = vim.env.TMUX_PANE
 
   return run({ 'tmux', 'show', '-pt', tmux_pane, '-v', '@editprompt_target_panes' }, function(result)
     if result.code ~= 0 then
@@ -167,14 +194,26 @@ function M.resolve_target_pane(callback)
       return
     end
 
-    callback({ ok = true, pane_id = pane_id })
+    callback({ ok = true, multiplexer = multiplexer, pane_id = pane_id })
   end)
 end
 
-function M.capture_pane(pane_id, lines, callback)
-  return run({ 'tmux', 'capture-pane', '-p', '-t', pane_id, '-S', '-' .. tostring(lines) }, function(result)
+function M.capture_pane(multiplexer, pane_id, lines, callback)
+  local args
+  if multiplexer == 'herdr' then
+    args = { 'herdr', 'pane', 'read', pane_id, '--source', 'recent-unwrapped', '--lines', tostring(lines) }
+  elseif multiplexer == 'tmux' then
+    args = { 'tmux', 'capture-pane', '-p', '-t', pane_id, '-S', '-' .. tostring(lines) }
+  else
+    schedule(callback, { ok = false, message = 'unsupported multiplexer: ' .. tostring(multiplexer) })
+    return nil
+  end
+
+  return run(args, function(result)
     if result.code ~= 0 then
-      callback({ ok = false, message = vim.trim(result.stderr or 'tmux capture-pane failed') })
+      local fallback = multiplexer == 'herdr' and 'herdr pane read failed' or 'tmux capture-pane failed'
+      local message = vim.trim(result.stderr or '')
+      callback({ ok = false, message = message ~= '' and message or fallback })
       return
     end
 
@@ -202,7 +241,7 @@ function M.get(opts, callback)
       return
     end
 
-    handle.process = M.capture_pane(resolved.pane_id, opts.lines, function(captured)
+    handle.process = M.capture_pane(resolved.multiplexer, resolved.pane_id, opts.lines, function(captured)
       if handle.done then
         return
       end
@@ -235,10 +274,15 @@ function M.cancel(handle)
 end
 
 function M.resolve_target_pane_sync()
-  local tmux_pane = vim.env.TMUX_PANE
-  if not tmux_pane or tmux_pane == '' then
-    return nil, 'TMUX_PANE is not set'
+  local multiplexer = M.multiplexer()
+  if not multiplexer then
+    return nil, 'tmux or Herdr environment was not detected'
   end
+  if multiplexer == 'herdr' then
+    return resolve_herdr_target_pane()
+  end
+
+  local tmux_pane = vim.env.TMUX_PANE
 
   local ok, process = pcall(vim.system, {
     'tmux',

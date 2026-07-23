@@ -3,7 +3,7 @@
 [日本語](README.ja.md)
 
 `panepilot.nvim` completes prompts written for AI coding agents in [editprompt](https://github.com/eetann/editprompt).
-It captures the destination tmux pane, masks likely secrets, and generates up to three continuations from the terminal context and the current draft.
+It captures the destination tmux or [Herdr](https://herdr.dev/) pane, masks likely secrets, and generates up to three continuations from the terminal context and the current draft.
 The selected candidate is shown as multiline ghost text, and the OpenAI and Claude API backends can expose the same candidate set through nvim-cmp.
 
 The plugin is active only when `EDITPROMPT=1` and the current filetype is `markdown.editprompt`.
@@ -12,7 +12,7 @@ It does not install keymaps.
 ## Requirements
 
 - Neovim 0.11+
-- tmux
+- tmux or Herdr
 - OpenAI backend: curl 8.3+ and `PANEPILOT_API_KEY`
 - Claude backend: curl 8.3+ and `PANEPILOT_API_KEY`
 - Codex backend: the `codex` executable
@@ -204,7 +204,10 @@ Use `<C-v><Tab>` to insert a literal tab.
 
 ## Behavior
 
-- The first pane in tmux option `@editprompt_target_panes` is used as the destination pane.
+- Panepilot detects Herdr from `HERDR_ENV=1` or `HERDR_ACTIVE_PANE_ID`; otherwise it detects tmux from `TMUX_PANE`. Herdr takes precedence when both environments are present.
+- With tmux, the first pane in tmux option `@editprompt_target_panes` is used as the destination pane.
+- With Herdr, `EDITPROMPT_TARGET_PANE` is used as the destination pane. editprompt must pass it to the editor process; Panepilot does not infer the destination from Herdr's active or editor pane.
+- Herdr context is read with `herdr pane read <pane> --source recent-unwrapped --lines <context.lines>`.
 - Automatic completion uses the OpenAI or Claude API backend after `auto_trigger.debounce_ms` and waits until the pane has been unchanged for `auto_trigger.pane_quiet_sec`.
 - At the start of any line, including an empty draft, automatic ghost completion and automatically triggered nvim-cmp requests stay idle; `trigger()` and manually invoked nvim-cmp completion remain available.
 - Automatic ghost text is suppressed while the nvim-cmp menu is visible or skkeleton is enabled.
@@ -217,8 +220,8 @@ Use `<C-v><Tab>` to insert a literal tab.
 
 ## Privacy
 
-Each request includes the masked tmux context and the complete editprompt draft with a cursor marker.
-Masking, including `context.mask_patterns`, applies only to the captured tmux context; the editprompt draft is sent without masking.
+Each request includes the masked destination-pane context and the complete editprompt draft with a cursor marker.
+Masking, including `context.mask_patterns`, applies only to the captured pane context; the editprompt draft is sent without masking.
 Built-in masking covers long `sk-...` tokens and key/value fields whose names end in `key`, `token`, `secret`, `password`, `passwd`, or `credential`.
 Masking is best-effort; use `:PanepilotDebugContext` and custom `context.mask_patterns` to verify sensitive environments.
 
@@ -229,9 +232,9 @@ Codex also receives its prompt through stdin.
 
 | Command | Description |
 | --- | --- |
-| `:PanepilotDebugContext` | Open the masked tmux context that would be sent to the backend. |
+| `:PanepilotDebugContext` | Open the masked pane context that would be sent to the backend. |
 | `:PanepilotLog` | Open the in-memory diagnostic ring. No log file is written. |
-| `:checkhealth panepilot` | Check `EDITPROMPT`, tmux, the target pane, dependencies for all backends, and configuration. |
+| `:checkhealth panepilot` | Check `EDITPROMPT`, the selected multiplexer, the target pane, dependencies for all backends, and configuration. |
 
 | Function | Description |
 | --- | --- |
